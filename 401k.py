@@ -1,5 +1,4 @@
 from datetime import *
-from termcolor import colored
 
 # Static parameters
 max_401k_contribution = int(19500)
@@ -47,5 +46,5 @@ print('No of pay periods left:', no_of_pay_periods_left)
 amount_per_pay_period = float(remaining_amount_for_401k/no_of_pay_periods_left)
 percentage_per_pay_period = float((amount_per_pay_period/gross_pay_biweekly)*100)
 
-print('Amount per pay period:', colored(amount_per_pay_period, red))
+print('Amount per pay period:', amount_per_pay_period)
 print('New percentage per pay period:', percentage_per_pay_period)
