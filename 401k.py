@@ -1,7 +1,7 @@
 from datetime import *
 
 # Static parameters
-max_401k_contribution = int(19500)
+max_401k_contribution = int(20500)
 no_of_pay_periods = int(26)
 
 # Input first pay date
