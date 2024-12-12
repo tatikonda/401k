@@ -10,7 +10,7 @@ import sys
 
 def get_params():
     parser = ArgumentParser(prog='senator.py', usage='Provide senator last name and year', description='A script to get senator trades for that year')
-    parser.add_argument("-y", "--year", action="store")
+    parser.add_argument("-y", "--year", action="store", required=True)
     parser.add_argument("-l", "--last_name", action="store")
     params = parser.parse_args(sys.argv[1:])
     return params
