@@ -134,11 +134,12 @@ def parse_transactions(data):
             transaction_date = date_match.group(1)
         #print(transaction_date)
         # Step 4: Extract Description starting with D: till the end of the line
-        if 'D:' or 'DESCRIPTION:' in line.upper():
-            #print(f"Processing line: {line}")
-            description_match = re.search(r'D:\s*(.*)|DESCRIPTION:\s*(.*)', line)
+        if 'D:' or 'DESCRIPTION:' or 'S O:' in line.upper():
+            print(f"Processing line: {line}")
+            description_match = re.search(r'D:\s*(.*)|DESCRIPTION:\s*(.*)|O:\s*(.*)', line)
+            
             if description_match:
-                description = description_match.group(1).strip()
+                description = description_match.group(0).strip()
             #elif description_match is None:
             #    description = "NA"
 
