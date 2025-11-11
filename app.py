@@ -52,5 +52,12 @@ if st.button("Calculate"):
 
 
 
-
-
+st.markdown(
+    """
+    ---
+    <div style='text-align: center; color: white; font-size: 0.9em;'>
+        ✏️ Created by Arun Tatikonda 🧠
+    </div>
+    """,
+    unsafe_allow_html=True
+)
