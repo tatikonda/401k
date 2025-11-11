@@ -10,7 +10,8 @@ import altair as alt
 FMP_API_KEY = st.secrets["FMP_API_KEY"]  # <-- replace with your FMP API key
 FMP_EARNINGS_URL = "https://financialmodelingprep.com/stable/earnings-calendar"
 
-st.set_page_config(page_title="Earnings & Options Flow Sentiment Pro", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Earnings & Options Flow Sentiment Pro",
+                   page_icon="📊", layout="wide")
 
 st.title("📈 Earnings & Options Flow Sentiment")
 st.markdown("""
@@ -23,10 +24,9 @@ Analyze **option sentiment, unusual activity**, and **price trends** for any sto
 # --- Cached Earnings Fetch ---
 @st.cache_data(ttl=3600*12, show_spinner=False)
 def get_fmp_earnings():
-    """Fetch and cache earnings calendar data for the next 45 days."""
     today = datetime.today()
     future = today + timedelta(days=45)
-    url = "https://financialmodelingprep.com/stable/earnings-calendar"
+    url = FMP_EARNINGS_URL
     params = {
         "from": today.strftime("%Y-%m-%d"),
         "to": future.strftime("%Y-%m-%d"),
@@ -56,7 +56,6 @@ if not earnings_df.empty:
     col1, col2 = st.columns(2)
 
     def safe_display(df):
-        # Show only existing columns
         cols_to_show = [c for c in ["symbol", "date", "epsEstimated", "revenueEstimated"] if c in df.columns]
         st.dataframe(df[cols_to_show], width='stretch')
 
@@ -110,13 +109,11 @@ def parse_contract_symbol(symbol):
         date_str = symbol[-15:-9]  # YYMMDD
         opt_type = symbol[-9:-8]
         strike_str = symbol[-8:]
-        # Convert YYMMDD → YYYY-MM-DD
         exp_date = f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:]}"
         strike = float(strike_str) / 1000
         return f"{underlying} {exp_date} {opt_type} {strike:.0f}"
     except Exception:
         return symbol
-
 
 if ticker:
     try:
@@ -231,18 +228,6 @@ if ticker:
             calls, puts = opt_chain.calls.copy(), opt_chain.puts.copy()
 
             # --- Add formatted readable contract symbols ---
-            def parse_contract_symbol(symbol):
-                try:
-                    underlying = symbol[:-15]
-                    date_str = symbol[-15:-9]  # YYMMDD
-                    opt_type = symbol[-9:-8]
-                    strike_str = symbol[-8:]
-                    exp_date = f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:]}"
-                    strike = float(strike_str) / 1000
-                    return f"{underlying} {exp_date} {opt_type} {strike:.0f}"
-                except Exception:
-                    return symbol
-
             calls["Readable Symbol"] = calls["contractSymbol"].apply(parse_contract_symbol)
             puts["Readable Symbol"] = puts["contractSymbol"].apply(parse_contract_symbol)
 
@@ -258,7 +243,7 @@ if ticker:
             # --- Function to add heatmap styling ---
             def style_options_table(df):
                 return df.style.background_gradient(subset=['volume'], cmap='Reds') \
-                            .background_gradient(subset=['openInterest'], cmap='Blues')
+                               .background_gradient(subset=['openInterest'], cmap='Blues')
 
             # --- Display Tables ---
             if not unusual_calls.empty or not unusual_puts.empty:
@@ -278,12 +263,97 @@ if ticker:
                 with tab2:
                     st.dataframe(style_options_table(top_puts[['Readable Symbol','strike','volume','openInterest','lastPrice']]), width='stretch')
 
-
-
-
     except Exception as e:
         st.error(f"Error: {e}")
 
+# --- Sector ETF Containers in 3x3 Grid with Enhanced Formatting ---
+st.markdown("---")
+st.header("📊 Top ETFs by Sector (3×3 Grid)")
+
+@st.cache_data(ttl=3600)
+def fetch_etf_metrics(etfs):
+    data = []
+    for ticker in etfs:
+        try:
+            etf = yf.Ticker(ticker)
+            info = etf.info
+            prev_close = info.get("previousClose", np.nan)
+            curr_price = info.get("regularMarketPrice", np.nan)
+            color = "green" if curr_price >= prev_close else "red"
+
+            # Format Market Cap
+            market_cap = info.get("marketCap", np.nan)
+            if pd.notna(market_cap):
+                if market_cap >= 1e12:
+                    market_cap_str = f"{market_cap/1e12:.2f}T"
+                elif market_cap >= 1e9:
+                    market_cap_str = f"{market_cap/1e9:.2f}B"
+                elif market_cap >= 1e6:
+                    market_cap_str = f"{market_cap/1e6:.2f}M"
+                else:
+                    market_cap_str = str(market_cap)
+            else:
+                market_cap_str = "N/A"
+
+            # Format volume
+            vol = info.get("volume", np.nan)
+            vol_str = f"{int(vol):,}" if pd.notna(vol) else "N/A"
+
+            data.append({
+                "ETF": ticker,
+                "Price": curr_price,
+                "PriceColor": color,
+                "Previous Close": prev_close,
+                "Market Cap": market_cap_str,
+                "Volume": vol_str
+            })
+        except Exception:
+            data.append({
+                "ETF": ticker,
+                "Price": np.nan,
+                "PriceColor": "gray",
+                "Previous Close": np.nan,
+                "Market Cap": "N/A",
+                "Volume": "N/A"
+            })
+    return pd.DataFrame(data)
+
+# List of sectors
+sector_list = [
+    ("Semiconductors", ["SMH", "SOXX", "PSI", "USD", "HXL"]),    
+    ("Technology", ["XLK", "VGT", "FTEC", "SMH", "TECL"]),
+    ("Finance", ["XLF", "VFH", "KBE", "KRE", "FINX"]),
+    ("Oil & Energy", ["XLE", "VDE", "OIH", "IEO", "USO"]),
+    ("AI & Robotics", ["BOTZ", "ROBO", "ARKQ", "IRBO", "PRNT"]),
+    ("Datacenters / Cloud", ["SRVR", "CORZ", "QCLN", "CIBR", "SKYY"]),
+    ("Healthcare", ["XLV", "VHT", "IYH", "RYH", "FHLC"]),
+    ("Consumer Discretionary", ["XLY", "VCR", "FDIS", "PEJ", "RCD"]),
+    ("Consumer Staples", ["XLP", "VDC", "KXI", "RHS", "FSTA"]),
+    ("Industrial / Manufacturing", ["XLI", "VIS", "IYJ", "PRN", "RGI"]),
+    ("Utilities", ["XLU", "VPU", "IDU", "FUTY", "FXU"]),
+    ("Materials", ["XLB", "VAW", "MXI", "RTM", "PYZ"]),
+    ("Real Estate", ["XLRE", "VNQ", "IYR", "RWR", "FREL"]),
+    ("Communications / Media", ["XLC", "VOX", "FCOM", "IXP", "PEJ"]),
+    ("Biotech", ["IBB", "XBI", "BBH", "LABU", "BTX"])
+    
+]
+
+# Place sectors in 3x3 grid
+for i in range(0, len(sector_list), 3):
+    cols = st.columns(3)
+    for j, (sector_name, etfs) in enumerate(sector_list[i:i+3]):
+        with cols[j]:
+            st.subheader(f"💼 {sector_name}")
+            df_metrics = fetch_etf_metrics(etfs)
+            # Color-code price
+            df_display = df_metrics.copy()
+            df_display["Price"] = df_display.apply(
+                lambda x: f"<span style='color:{x['PriceColor']}'>{x['Price']}</span>", axis=1
+            )
+            st.write(df_display[["ETF", "Price", "Previous Close", "Market Cap", "Volume"]].to_html(escape=False), unsafe_allow_html=True)
+
+
+# --- Footer ---
 st.markdown(
     """
     ---
@@ -291,6 +361,6 @@ st.markdown(
     Built with Streamlit, free Yahoo data, and ❤️ by Arun Tatikonda 🧠 | ☕ <a href="https://www.paypal.com/donate/?hosted_button_id=RKQ6B5LAPK6FG" target="_blank"> 
         Buy me a coffee  </a>
         </div>
-        """,
+    """,
     unsafe_allow_html=True
 )
