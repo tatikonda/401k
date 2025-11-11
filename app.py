@@ -55,7 +55,8 @@ st.markdown(
     """
     ---
     <div style='text-align: center; color: white; font-size: 0.9em;'>
-        ✏️ Created by Arun Tatikonda 🧠
+        ✏️ Created by Arun Tatikonda 🧠 | ☕ <a href="https://www.paypal.com/donate/?hosted_button_id=RKQ6B5LAPK6FG" target="_blank"> 
+        Buy me a coffee  </a>
     </div>
     """,
     unsafe_allow_html=True
