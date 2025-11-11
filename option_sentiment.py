@@ -7,12 +7,12 @@ from datetime import datetime, timedelta
 import altair as alt
 
 # --- CONFIG ---
-FMP_API_KEY = "izAv7xiGjKzOoMIosExKA7Ia5RYkRtB3"  # <-- replace with your FMP API key
+FMP_API_KEY = st.secrets["FMP_API_KEY"]  # <-- replace with your FMP API key
 FMP_EARNINGS_URL = "https://financialmodelingprep.com/stable/earnings-calendar"
 
 st.set_page_config(page_title="Earnings & Options Flow Sentiment Pro", page_icon="📊", layout="wide")
 
-st.title("📈 Earnings & Options Flow Sentiment Pro")
+st.title("📈 Earnings & Options Flow Sentiment")
 st.markdown("""
 Analyze **option sentiment, unusual activity**, and **price trends** for any stock or ETF.  
 - Stocks → Based on **earnings proximity**  
@@ -20,35 +20,59 @@ Analyze **option sentiment, unusual activity**, and **price trends** for any sto
 ---
 """)
 
+# --- Cached Earnings Fetch ---
+@st.cache_data(ttl=3600*12, show_spinner=False)
+def get_fmp_earnings():
+    """Fetch and cache earnings calendar data for the next 30 days."""
+    today = datetime.today()
+    future = today + timedelta(days=30)
+    url = "https://financialmodelingprep.com/stable/earnings-calendar"
+    params = {
+        "from": today.strftime("%Y-%m-%d"),
+        "to": future.strftime("%Y-%m-%d"),
+        "apikey": FMP_API_KEY
+    }
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date'])
+            return df
+    except Exception as e:
+        st.warning(f"⚠️ Could not fetch or parse FMP data: {e}")
+    return pd.DataFrame()
+
+earnings_df = get_fmp_earnings()
+
 # --- Dynamic Major Earnings Panel ---
-st.subheader("📅 Major Earnings Upcoming (Next 1 Week & 30 Days)")
+if not earnings_df.empty:
+    today = datetime.today()
+    next_7 = today + timedelta(days=7)
+    next_30 = today + timedelta(days=30)
 
-today = datetime.today()
-one_week = today + timedelta(days=7)
-thirty_days = today + timedelta(days=30)
+    st.subheader("📅 Major Upcoming Earnings (Next 1 Week & 30 Days)")
+    col1, col2 = st.columns(2)
 
-try:
-    params = {"from": today.strftime("%Y-%m-%d"),
-              "to": thirty_days.strftime("%Y-%m-%d"),
-              "apikey": FMP_API_KEY}
-    resp = requests.get(FMP_EARNINGS_URL, params=params)
-    if resp.status_code == 200:
-        data = resp.json()
-        df_earn = pd.DataFrame(data)
-        if not df_earn.empty:
-            df_earn['date'] = pd.to_datetime(df_earn['date']).dt.date
-            earning_next_week = df_earn[(df_earn['date'] >= today.date()) & (df_earn['date'] <= one_week.date())]
-            earning_next_30 = df_earn[(df_earn['date'] >= today.date()) & (df_earn['date'] <= thirty_days.date())]
-            next_week_str = ", ".join(sorted(earning_next_week['symbol'].astype(str).unique()))
-            next_30_str = ", ".join(sorted(earning_next_30['symbol'].astype(str).unique()))
-            st.markdown(f"**Next 1 Week:** {next_week_str if next_week_str else 'None'}")
-            st.markdown(f"**Next 30 Days:** {next_30_str if next_30_str else 'None'}")
-        else:
-            st.info("No major earnings found in the next 30 days.")
-    else:
-        st.warning("Could not fetch major earnings calendar from FMP.")
-except Exception as e:
-    st.warning(f"Error fetching earnings calendar: {e}")
+    def safe_display(df):
+        # Show only existing columns
+        cols_to_show = [c for c in ["symbol", "date", "epsEstimated", "revenueEstimated"] if c in df.columns]
+        st.dataframe(df[cols_to_show], width='stretch')
+
+    with col1:
+        st.markdown("**Next 7 Days**")
+        upcoming_7 = earnings_df[(earnings_df["date"] >= today) &
+                                (earnings_df["date"] <= next_7)]
+        safe_display(upcoming_7)
+
+    with col2:
+        st.markdown("**Next 30 Days**")
+        upcoming_30 = earnings_df[(earnings_df["date"] > next_7) &
+                                (earnings_df["date"] <= next_30)]
+        safe_display(upcoming_30)
+else:
+    st.warning("⚠️ No earnings data available. Check your API key or wait for cache refresh.")
 
 st.markdown("---")
 
@@ -208,7 +232,7 @@ if ticker:
             # --- Unusual Options Activity Table (no matplotlib) ---
             if not unusual_calls.empty or not unusual_puts.empty:
                 st.success(f"🔥 Found {len(unusual_calls)} unusual CALL and {len(unusual_puts)} unusual PUT contracts.")
-                tab1, tab2 = st.tabs(["📞 Calls", "📉 Puts"])
+                tab1, tab2 = st.tabs(["📈 Calls", "📉 Puts"])
                 with tab1:
                     st.dataframe(unusual_calls[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
                 with tab2:
@@ -217,7 +241,7 @@ if ticker:
                 st.info("No unusual options activity detected. Showing top 10 options by volume.")
                 top_calls = calls.sort_values(by='volume', ascending=False).head(10)
                 top_puts = puts.sort_values(by='volume', ascending=False).head(10)
-                tab1, tab2 = st.tabs(["📞 Calls", "📉 Puts"])
+                tab1, tab2 = st.tabs(["📈 Calls", "📉 Puts"])
                 with tab1:
                     st.dataframe(top_calls[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
                 with tab2:
