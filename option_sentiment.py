@@ -104,6 +104,20 @@ def calc_sentiment(calls, puts):
 ticker = st.text_input("Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):", "").upper().strip()
 ETF_TICKERS = {"SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLY", "XLP", "XLV", "XLI", "XLRE", "XLB", "XLU"}
 
+def parse_contract_symbol(symbol):
+    try:
+        underlying = symbol[:-15]
+        date_str = symbol[-15:-9]  # YYMMDD
+        opt_type = symbol[-9:-8]
+        strike_str = symbol[-8:]
+        # Convert YYMMDD → YYYY-MM-DD
+        exp_date = f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:]}"
+        strike = float(strike_str) / 1000
+        return f"{underlying} {exp_date} {opt_type} {strike:.0f}"
+    except Exception:
+        return symbol
+
+
 if ticker:
     try:
         stock = yf.Ticker(ticker)
@@ -208,15 +222,31 @@ if ticker:
                 unsafe_allow_html=True
             )
 
-            # --- Unusual Options Activity (Flexible Detection + Inline Heatmap) ---
+            # --- Unusual Options Activity (with Heatmap) ---
             st.markdown("---")
             st.subheader("🔍 Options Activity (Volume / Open Interest Heatmap)")
 
             expiry_for_uoa = selected_expiries[0]
             opt_chain = stock.option_chain(expiry_for_uoa)
-            calls, puts = opt_chain.calls, opt_chain.puts
+            calls, puts = opt_chain.calls.copy(), opt_chain.puts.copy()
 
-            # Flexible UOA logic
+            # --- Add formatted readable contract symbols ---
+            def parse_contract_symbol(symbol):
+                try:
+                    underlying = symbol[:-15]
+                    date_str = symbol[-15:-9]  # YYMMDD
+                    opt_type = symbol[-9:-8]
+                    strike_str = symbol[-8:]
+                    exp_date = f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:]}"
+                    strike = float(strike_str) / 1000
+                    return f"{underlying} {exp_date} {opt_type} {strike:.0f}"
+                except Exception:
+                    return symbol
+
+            calls["Readable Symbol"] = calls["contractSymbol"].apply(parse_contract_symbol)
+            puts["Readable Symbol"] = puts["contractSymbol"].apply(parse_contract_symbol)
+
+            # --- Flexible UOA logic ---
             calls['uoa_flag'] = ((calls['volume'] > 1.5 * calls['openInterest']) & (calls['openInterest'] > 50)) | \
                                 (calls['volume'] > 500)
             puts['uoa_flag']  = ((puts['volume'] > 1.5 * puts['openInterest']) & (puts['openInterest'] > 50)) | \
@@ -225,27 +255,30 @@ if ticker:
             unusual_calls = calls[calls['uoa_flag']]
             unusual_puts  = puts[puts['uoa_flag']]
 
+            # --- Function to add heatmap styling ---
             def style_options_table(df):
                 return df.style.background_gradient(subset=['volume'], cmap='Reds') \
-                               .background_gradient(subset=['openInterest'], cmap='Blues')
+                            .background_gradient(subset=['openInterest'], cmap='Blues')
 
-            # --- Unusual Options Activity Table (no matplotlib) ---
+            # --- Display Tables ---
             if not unusual_calls.empty or not unusual_puts.empty:
                 st.success(f"🔥 Found {len(unusual_calls)} unusual CALL and {len(unusual_puts)} unusual PUT contracts.")
                 tab1, tab2 = st.tabs(["📈 Calls", "📉 Puts"])
                 with tab1:
-                    st.dataframe(unusual_calls[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
+                    st.dataframe(style_options_table(unusual_calls[['Readable Symbol','strike','volume','openInterest','lastPrice']]), width='stretch')
                 with tab2:
-                    st.dataframe(unusual_puts[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
+                    st.dataframe(style_options_table(unusual_puts[['Readable Symbol','strike','volume','openInterest','lastPrice']]), width='stretch')
             else:
                 st.info("No unusual options activity detected. Showing top 10 options by volume.")
                 top_calls = calls.sort_values(by='volume', ascending=False).head(10)
                 top_puts = puts.sort_values(by='volume', ascending=False).head(10)
                 tab1, tab2 = st.tabs(["📈 Calls", "📉 Puts"])
                 with tab1:
-                    st.dataframe(top_calls[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
+                    st.dataframe(style_options_table(top_calls[['Readable Symbol','strike','volume','openInterest','lastPrice']]), width='stretch')
                 with tab2:
-                    st.dataframe(top_puts[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
+                    st.dataframe(style_options_table(top_puts[['Readable Symbol','strike','volume','openInterest','lastPrice']]), width='stretch')
+
+
 
 
     except Exception as e:
