@@ -41,8 +41,8 @@ if st.button("Calculate"):
     )
 
     st.subheader("📊 Results")
-    st.write(f"**Remaining Amount:** ${result['remaining_amount']:.2f}")
     st.write(f"**Pay Periods Left:** {result['periods_left']}")
+    st.write(f"**Remaining Amount:** ${result['remaining_amount']:.2f}")    
     st.write(f"**Amount per Pay Period:** ${result['amount_per_period']:.2f}")
     st.success(f"✅ New Contribution Percentage: **{result['percent_per_period']:.2f}%**")
     result = calculate_401k_contribution(
