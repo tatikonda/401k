@@ -41,7 +41,6 @@ if st.button("Calculate"):
     )
 
     st.subheader("📊 Results")
-    st.write(f"**Annual Limit:** ${result['annual_limit']:.2f}")
     st.write(f"**Remaining Amount:** ${result['remaining_amount']:.2f}")
     st.write(f"**Pay Periods Left:** {result['periods_left']}")
     st.write(f"**Amount per Pay Period:** ${result['amount_per_period']:.2f}")
