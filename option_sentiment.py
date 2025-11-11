@@ -205,28 +205,35 @@ if ticker:
                 return df.style.background_gradient(subset=['volume'], cmap='Reds') \
                                .background_gradient(subset=['openInterest'], cmap='Blues')
 
+            # --- Unusual Options Activity Table (no matplotlib) ---
             if not unusual_calls.empty or not unusual_puts.empty:
                 st.success(f"🔥 Found {len(unusual_calls)} unusual CALL and {len(unusual_puts)} unusual PUT contracts.")
-                tab1, tab2 = st.tabs(["📈 Calls", "📉 Puts"])
+                tab1, tab2 = st.tabs(["📞 Calls", "📉 Puts"])
                 with tab1:
-                    st.dataframe(style_options_table(unusual_calls[['contractSymbol','strike','volume','openInterest','lastPrice']]), width='stretch')
+                    st.dataframe(unusual_calls[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
                 with tab2:
-                    st.dataframe(style_options_table(unusual_puts[['contractSymbol','strike','volume','openInterest','lastPrice']]), width='stretch')
+                    st.dataframe(unusual_puts[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
             else:
                 st.info("No unusual options activity detected. Showing top 10 options by volume.")
                 top_calls = calls.sort_values(by='volume', ascending=False).head(10)
                 top_puts = puts.sort_values(by='volume', ascending=False).head(10)
-                tab1, tab2 = st.tabs(["📈 Calls", "📉 Puts"])
+                tab1, tab2 = st.tabs(["📞 Calls", "📉 Puts"])
                 with tab1:
-                    st.dataframe(style_options_table(top_calls[['contractSymbol','strike','volume','openInterest','lastPrice']]), width='stretch')
+                    st.dataframe(top_calls[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
                 with tab2:
-                    st.dataframe(style_options_table(top_puts[['contractSymbol','strike','volume','openInterest','lastPrice']]), width='stretch')
+                    st.dataframe(top_puts[['contractSymbol','strike','volume','openInterest','lastPrice']], width='stretch')
+
 
     except Exception as e:
         st.error(f"Error: {e}")
 
-st.markdown("---")
 st.markdown(
-    "<div style='text-align:center; font-size:0.9em;'>☕ Built with Streamlit, free Yahoo data, FMP earnings calendar API, and ❤️ by an Options Trader</div>",
+    """
+    ---
+    <div style='text-align:center; font-size:0.9em;'>
+    Built with Streamlit, free Yahoo data, and ❤️ by Arun Tatikonda 🧠 | ☕ <a href="https://www.paypal.com/donate/?hosted_button_id=RKQ6B5LAPK6FG" target="_blank"> 
+        Buy me a coffee  </a>
+        </div>
+        """,
     unsafe_allow_html=True
 )
