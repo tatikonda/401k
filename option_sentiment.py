@@ -23,9 +23,9 @@ Analyze **option sentiment, unusual activity**, and **price trends** for any sto
 # --- Cached Earnings Fetch ---
 @st.cache_data(ttl=3600*12, show_spinner=False)
 def get_fmp_earnings():
-    """Fetch and cache earnings calendar data for the next 30 days."""
+    """Fetch and cache earnings calendar data for the next 45 days."""
     today = datetime.today()
-    future = today + timedelta(days=30)
+    future = today + timedelta(days=45)
     url = "https://financialmodelingprep.com/stable/earnings-calendar"
     params = {
         "from": today.strftime("%Y-%m-%d"),
@@ -49,10 +49,10 @@ earnings_df = get_fmp_earnings()
 # --- Dynamic Major Earnings Panel ---
 if not earnings_df.empty:
     today = datetime.today()
-    next_7 = today + timedelta(days=7)
-    next_30 = today + timedelta(days=30)
+    next_7 = today + timedelta(days=10)
+    next_30 = today + timedelta(days=45)
 
-    st.subheader("📅 Major Upcoming Earnings (Next 1 Week & 30 Days)")
+    st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
     col1, col2 = st.columns(2)
 
     def safe_display(df):
@@ -61,13 +61,13 @@ if not earnings_df.empty:
         st.dataframe(df[cols_to_show], width='stretch')
 
     with col1:
-        st.markdown("**Next 7 Days**")
+        st.markdown("**Next 10 Days**")
         upcoming_7 = earnings_df[(earnings_df["date"] >= today) &
                                 (earnings_df["date"] <= next_7)]
         safe_display(upcoming_7)
 
     with col2:
-        st.markdown("**Next 30 Days**")
+        st.markdown("**Next 45 Days**")
         upcoming_30 = earnings_df[(earnings_df["date"] > next_7) &
                                 (earnings_df["date"] <= next_30)]
         safe_display(upcoming_30)
