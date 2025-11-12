@@ -133,8 +133,9 @@ if ticker:
         stock = yf.Ticker(ticker)
         # --- Price Overview & Chart Block ---
         hist = stock.history(period="12mo", interval="1d")
+        stock_name = stock.info.get("longName") or stock.info.get("shortName") or ticker
         if not hist.empty:
-            st.subheader(f"📊 Price Overview ({ticker})")
+            st.subheader(f"📊 {stock_name}({ticker})")
 
             # Columns for metrics + chart
             col1, col2 = st.columns([1, 3])
