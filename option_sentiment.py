@@ -22,7 +22,7 @@ Analyze **option sentiment, unusual activity**, and **price trends** for any sto
 """)
 
 # --- Cached Earnings Fetch ---
-@st.cache_data(ttl=3600*12, show_spinner=False)
+@st.cache_data(ttl=3600*6, show_spinner=False)
 def get_fmp_earnings():
     today = datetime.today()
     future = today + timedelta(days=45)
@@ -44,6 +44,18 @@ def get_fmp_earnings():
         st.warning(f"⚠️ Could not fetch or parse FMP data: {e}")
     return pd.DataFrame()
 
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
+with col2:
+    if st.button("🔁 Refresh Earnings", width='stretch'):
+        get_fmp_earnings.clear()
+        # ✅ Backward-compatible rerun
+        if hasattr(st, "rerun"):
+            st.rerun()
+        else:
+            st.experimental_rerun()
+
 earnings_df = get_fmp_earnings()
 
 # --- Dynamic Major Earnings Panel ---
@@ -52,7 +64,8 @@ if not earnings_df.empty:
     next_7 = today + timedelta(days=10)
     next_30 = today + timedelta(days=45)
 
-    st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
+    #st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
+
     col1, col2 = st.columns(2)
 
     def safe_display(df):
@@ -373,8 +386,17 @@ if ticker:
 
 # --- Sector ETF Containers in 3x3 Grid with Enhanced Formatting ---
 st.markdown("---")
-st.header("📊 Top ETFs by Sector (3×3 Grid)")
 
+# --- Header Row with Refresh Button ---
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.header("📊 Top ETFs by Sector (3×3 Grid)")
+with col2:
+    if st.button("🔁 Refresh", width='stretch'):
+        st.cache_data.clear()
+        st.rerun()
+
+# --- Cached ETF Fetch Function ---
 @st.cache_data(ttl=3600)
 def fetch_etf_metrics(etfs):
     data = []
@@ -423,7 +445,7 @@ def fetch_etf_metrics(etfs):
             })
     return pd.DataFrame(data)
 
-# List of sectors
+# --- Sector ETF List ---
 sector_list = [
     ("Semiconductors", ["SMH", "SOXX", "PSI", "USD", "HXL"]),    
     ("Technology", ["XLK", "VGT", "FTEC", "SMH", "TECL"]),
@@ -440,23 +462,20 @@ sector_list = [
     ("Real Estate", ["XLRE", "VNQ", "IYR", "RWR", "FREL"]),
     ("Communications / Media", ["XLC", "VOX", "FCOM", "IXP", "PEJ"]),
     ("Biotech", ["IBB", "XBI", "BBH", "LABU", "BTX"])
-    
 ]
 
-# Place sectors in 3x3 grid
+# --- Display in 3×3 Grid ---
 for i in range(0, len(sector_list), 3):
     cols = st.columns(3)
     for j, (sector_name, etfs) in enumerate(sector_list[i:i+3]):
         with cols[j]:
             st.subheader(f"💼 {sector_name}")
             df_metrics = fetch_etf_metrics(etfs)
-            # Color-code price
             df_display = df_metrics.copy()
             df_display["Price"] = df_display.apply(
                 lambda x: f"<span style='color:{x['PriceColor']}'>{x['Price']}</span>", axis=1
             )
             st.write(df_display[["ETF", "Price", "Previous Close", "Market Cap", "Volume"]].to_html(escape=False), unsafe_allow_html=True)
-
 
 # --- Footer ---
 st.markdown(
