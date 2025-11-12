@@ -118,33 +118,138 @@ def parse_contract_symbol(symbol):
 if ticker:
     try:
         stock = yf.Ticker(ticker)
-
-        # --- Current Price + Day High/Low + Chart with MA200 in One Row ---
+        # --- Price Overview & Chart Block ---
         hist = stock.history(period="12mo", interval="1d")
         if not hist.empty:
             st.subheader(f"📊 Price Overview ({ticker})")
-            col1, col2 = st.columns([1,3])
+
+            # Columns for metrics + chart
+            col1, col2 = st.columns([1, 3])
 
             with col1:
+                # --- RSI Calculation ---
+                delta = hist['Close'].diff()
+                gain = delta.clip(lower=0)
+                loss = -delta.clip(upper=0)
+                avg_gain = gain.rolling(14, min_periods=1).mean()
+                avg_loss = loss.rolling(14, min_periods=1).mean()
+                rs = avg_gain / avg_loss.replace(0, 0.0001)
+                hist['RSI'] = 100 - (100 / (1 + rs))
+                latest_rsi = hist['RSI'].iloc[-1]
+                # --- Determine color ---
+                if latest_rsi > 70:
+                    rsi_color = "red"
+                elif latest_rsi < 30:
+                    rsi_color = "green"
+                else:
+                    rsi_color = "yellow"                
                 regular_price = stock.info.get("regularMarketPrice", np.nan)
                 day_high = stock.info.get("dayHigh", np.nan)
                 day_low = stock.info.get("dayLow", np.nan)
-                st.metric(label="💰 Current Price", value=regular_price, delta=f"Day High: {day_high} / Low: {day_low}")
-
+                prev_close = stock.info.get("previousClose", np.nan)
+                # Determine current price color
+                if regular_price > prev_close:
+                    price_color = "green"
+                elif regular_price < prev_close:
+                    price_color = "red"
+                else:
+                    price_color = "yellow"
+                st.markdown(
+                    f"<div style='font-size:1.4em; font-weight:bold; color:{price_color}'>💰Current Price:${regular_price:.2f}</div>",
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f"<div style='font-size:1.2em; color:gray'>High: {day_high} / Low: {day_low}</div>",
+                    unsafe_allow_html=True
+                )
+                st.metric(label="⏮️ Previous Close", 
+                        value=f"${prev_close:.2f}" if not np.isnan(prev_close) else "N/A")
+                # --- Display as styled metric ---
+                st.markdown(f"<div style='font-size:1.4em; font-weight:bold; color:{rsi_color}'>📊 RSI (14): {latest_rsi:.1f}</div>",
+                unsafe_allow_html=True
+                )
+                st.caption("RSI = Relative Strength Index; >70 = overbought, <30 = oversold.")
             with col2:
-                hist['MA200'] = hist['Close'].rolling(window=200).mean()
+                # Calculate EMAs and MA
+                hist['EMA10'] = hist['Close'].ewm(span=10, adjust=False).mean()
+                hist['EMA20'] = hist['Close'].ewm(span=20, adjust=False).mean()
+                hist['MA200'] = hist['Close'].rolling(window=200, min_periods=1).mean()
+                ema12 = hist['Close'].ewm(span=12, adjust=False).mean()
+                ema26 = hist['Close'].ewm(span=26, adjust=False).mean()
+                hist['MACD'] = ema12 - ema26
+                hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
+                hist['Hist'] = hist['MACD'] - hist['Signal']
+
                 hist_reset = hist.reset_index()
-                price_chart = alt.Chart(hist_reset).mark_line().encode(
-                    x='Date:T',
-                    y='Close:Q',
-                    tooltip=['Date:T','Close:Q','MA200:Q']
+                latest_price = hist_reset['Close'].iloc[-1]
+
+                base = alt.Chart(hist_reset).encode(x='Date:T')
+
+                # Candlestick wicks
+                wicks = base.mark_rule(size=1).encode(
+                    y='Low:Q',
+                    y2='High:Q',
+                    color=alt.condition("datum.Open <= datum.Close",
+                                        alt.value("#26a69a"),  # up = green
+                                        alt.value("#ef5350"))  # down = red
                 )
-                ma_chart = alt.Chart(hist_reset).mark_line(color='orange').encode(
-                    x='Date:T',
-                    y='MA200:Q',
-                    tooltip=['Date:T','MA200:Q']
+
+                # Candlestick bodies
+                candles = base.mark_bar(size=4).encode(
+                    y='Open:Q',
+                    y2='Close:Q',
+                    color=alt.condition("datum.Open <= datum.Close",
+                                        alt.value("#26a69a"),  # up
+                                        alt.value("#ef5350")),  # down
+                    tooltip=['Date:T', 'Open:Q', 'High:Q', 'Low:Q', 'Close:Q']
                 )
-                st.altair_chart(price_chart + ma_chart, width='stretch')
+
+                # Moving Averages
+                ema10_line = base.mark_line(color='orange', size=1.5).encode(y='EMA10:Q')
+                ema20_line = base.mark_line(color='white', size=1.5).encode(y='EMA20:Q')
+                ma200_line = base.mark_line(color='blue', size=2).encode(y='MA200:Q')
+
+                # Current Price Line
+                price_line = alt.Chart(pd.DataFrame({'y': [latest_price]})).mark_rule(
+                    color='yellow', strokeDash=[5, 5], size=1.5
+                ).encode(y='y:Q')
+                # Previous Proce Line
+                prev_close_line = alt.Chart(pd.DataFrame({'y':[prev_close]})).mark_rule(
+                    color='gray', strokeDash=[4,4], size=1.5
+                ).encode(y='y:Q')
+
+                price_text = alt.Chart(pd.DataFrame({'y': [latest_price]})).mark_text(
+                    align='left', dx=5, dy=-5, color='yellow', fontSize=12, fontWeight='bold'
+                ).encode(y='y:Q', text=alt.value(f"${latest_price:.2f}"))
+
+                # Volume Histogram (optional)
+                vol_chart = alt.Chart(hist_reset).mark_bar(opacity=0.5).encode(
+                    x='Date:T',
+                    y=alt.Y('Volume:Q', axis=alt.Axis(title='Volume')),
+                    color=alt.condition("datum.Open <= datum.Close",
+                                        alt.value("#26a69a"),
+                                        alt.value("#ef5350"))
+                ).properties(height=100)
+
+                # --- MACD chart ---
+                macd_base = alt.Chart(hist_reset).encode(x='Date:T')
+                macd_bar = macd_base.mark_bar().encode(
+                    y='Hist:Q',
+                    color=alt.condition("datum.Hist > 0", alt.value("#26a69a"), alt.value("#ef5350"))
+                )
+                macd_line = macd_base.mark_line(color='cyan', size=1).encode(y='MACD:Q')
+                signal_line = macd_base.mark_line(color='orange', size=1).encode(y='Signal:Q')
+                vol_macd_chart = alt.layer(vol_chart, macd_line, signal_line).resolve_scale(y='independent').properties(height=100, title="Volume + MACD")
+
+                # Combine all charts
+                price_chart = (wicks + candles + ema10_line + ema20_line + ma200_line + prev_close_line ).properties(height=420)
+                final_chart = alt.vconcat(price_chart, vol_macd_chart).resolve_scale(x='shared')
+                st.altair_chart(final_chart, width='stretch')
+        else:
+            st.warning("⚠️ No historical data available for this ticker.")
+
+
+
 
         # --- Determine if ETF ---
         stock_info = stock.info
