@@ -407,7 +407,17 @@ def fetch_etf_metrics(etfs):
             info = etf.info
             prev_close = info.get("previousClose", np.nan)
             curr_price = info.get("regularMarketPrice", np.nan)
-            color = "green" if curr_price >= prev_close else "red"
+
+            # Calculate % change
+            pct_change = np.nan
+            if pd.notna(prev_close) and prev_close != 0 and pd.notna(curr_price):
+                pct_change = ((curr_price - prev_close) / prev_close) * 100
+
+            color = (
+                "green" if pct_change > 0 else
+                "red" if pct_change < 0 else
+                "gray"
+            )
 
             # Format Market Cap
             market_cap = info.get("marketCap", np.nan)
@@ -431,6 +441,7 @@ def fetch_etf_metrics(etfs):
                 "ETF": ticker,
                 "Price": curr_price,
                 "PriceColor": color,
+                "% Change": pct_change,
                 "Previous Close": prev_close,
                 "Market Cap": market_cap_str,
                 "Volume": vol_str
@@ -440,6 +451,7 @@ def fetch_etf_metrics(etfs):
                 "ETF": ticker,
                 "Price": np.nan,
                 "PriceColor": "gray",
+                "% Change": np.nan,
                 "Previous Close": np.nan,
                 "Market Cap": "N/A",
                 "Volume": "N/A"
@@ -473,10 +485,22 @@ for i in range(0, len(sector_list), 3):
             st.subheader(f"💼 {sector_name}")
             df_metrics = fetch_etf_metrics(etfs)
             df_display = df_metrics.copy()
+
+            # Color the price and % change inline
             df_display["Price"] = df_display.apply(
-                lambda x: f"<span style='color:{x['PriceColor']}'>{x['Price']}</span>", axis=1
+                lambda x: f"<span style='color:{x['PriceColor']}'>{x['Price']:.2f}</span>"
+                if pd.notna(x["Price"]) else "N/A", axis=1
             )
-            st.write(df_display[["ETF", "Price", "Previous Close", "Market Cap", "Volume"]].to_html(escape=False), unsafe_allow_html=True)
+            df_display["% Change"] = df_display.apply(
+                lambda x: f"<span style='color:{x['PriceColor']}'>{x['% Change']:.2f}%</span>"
+                if pd.notna(x["% Change"]) else "N/A", axis=1
+            )
+
+            st.write(
+                df_display[["ETF", "Price", "% Change", "Previous Close", "Market Cap", "Volume"]]
+                .to_html(escape=False, index=False),
+                unsafe_allow_html=True
+            )
 
 # --- Footer ---
 st.markdown(
