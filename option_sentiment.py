@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 import altair as alt
 
 # --- CONFIG ---
-FMP_API_KEY = st.secrets["FMP_API_KEY"]  # <-- replace with your FMP API key
-FMP_EARNINGS_URL = "https://financialmodelingprep.com/stable/earnings-calendar"
+#FMP_API_KEY = st.secrets["FMP_API_KEY"]  # <-- replace with your FMP API key
+#FMP_EARNINGS_URL = "https://financialmodelingprep.com/stable/earnings-calendar"
 
 st.set_page_config(page_title="Earnings & Options Flow Sentiment Pro",
                    page_icon="📊", layout="wide")
