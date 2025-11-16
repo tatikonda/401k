@@ -21,70 +21,177 @@ Analyze **option sentiment, unusual activity**, and **price trends** for any sto
 ---
 """)
 
-# --- Cached Earnings Fetch ---
+# --- Cached Earnings Fetch (using Nasdaq API) ---
 @st.cache_data(ttl=3600*6, show_spinner=False)
-def get_fmp_earnings():
+def get_nasdaq_earnings():
     today = datetime.today()
-    future = today + timedelta(days=45)
-    url = FMP_EARNINGS_URL
-    params = {
-        "from": today.strftime("%Y-%m-%d"),
-        "to": future.strftime("%Y-%m-%d"),
-        "apikey": FMP_API_KEY
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        df = pd.DataFrame(data)
-        if not df.empty:
-            df['date'] = pd.to_datetime(df['date'])
-            return df
-    except Exception as e:
-        st.warning(f"⚠️ Could not fetch or parse FMP data: {e}")
+    earnings_list = []
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    for i in range(45):  # next 45 days
+        date_obj = today + timedelta(days=i)
+        # Skip weekends
+        if date_obj.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            continue        
+        date_str = (today + timedelta(days=i)).strftime("%Y-%m-%d")
+        url = f"https://api.nasdaq.com/api/calendar/earnings?date={date_str}"
+        try:
+            r = requests.get(url, headers=headers, timeout=8)
+            r.raise_for_status()
+            data = r.json()
+            rows = data.get("data", {}).get("rows", [])
+            if not rows:
+                continue
+            for row in rows:
+                ticker = row.get("symbol")
+                if not ticker:
+                    continue
+                mc_str = row.get("marketCap", "")
+                # Convert market cap string to int
+                mc = int("".join(filter(str.isdigit, mc_str))) if mc_str else 0
+                if mc < 1_000_000_000:  # skip small caps
+                    continue
+                eps = row.get("epsForecast", "").strip() or None
+                earnings_list.append({
+                    "symbol": ticker,
+                    "date": pd.to_datetime(date_str),
+                    "epsEstimated": eps,
+                    "marketCap": mc
+                })
+        except Exception as e:
+            st.warning(f"⚠️ Could not fetch Nasdaq earnings for {date_str}: {e}")
+            continue
+
+    if earnings_list:
+        df = pd.DataFrame(earnings_list)
+        return df
     return pd.DataFrame()
 
+# --- Helper to format market cap ---
+def format_market_cap(value):
+    if value >= 1_000_000_000:
+        return f"${value/1_000_000_000:.2f}B"
+    elif value >= 1_000_000:
+        return f"${value/1_000_000:.2f}M"
+    elif value >= 1_000:
+        return f"${value/1_000:.2f}K"
+    else:
+        return f"${value}"
+    
 col1, col2 = st.columns([4, 1])
 with col1:
     st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
 with col2:
+    # --- Market Cap Dropdown ---
+    
+    mc_options = {
+        ">= $100B": 100_000_000_000,
+        ">= $75B": 75_000_000_000,
+        ">= $50B": 50_000_000_000,
+        ">= $20B": 20_000_000_000,
+        ">= $10B": 10_000_000_000,
+        ">= $5B": 5_000_000_000,
+        ">= $1B": 1_000_000_000
+    }
+    mc_filter = st.selectbox("Min Market Cap", options=list(mc_options.keys()))
+    min_mc = mc_options[mc_filter]
+
+    # --- Refresh Button ---
     if st.button("🔁 Refresh Earnings", width='stretch'):
-        get_fmp_earnings.clear()
+        get_nasdaq_earnings.clear()
         # ✅ Backward-compatible rerun
         if hasattr(st, "rerun"):
             st.rerun()
         else:
             st.experimental_rerun()
 
-earnings_df = get_fmp_earnings()
+earnings_df = get_nasdaq_earnings()
 
 # --- Dynamic Major Earnings Panel ---
+# --- Dynamic Major Earnings Panel (Clickable Tickers + Table) ---
 if not earnings_df.empty:
+    # --- Market Cap filter ---
+    filtered_df = earnings_df[earnings_df["marketCap"] >= min_mc].copy()
+    filtered_df["marketCap"] = filtered_df["marketCap"].apply(format_market_cap)
+
+    # -----------------------------------------------------------------
+    # 1. SESSION STATE
+    # -----------------------------------------------------------------
+    if "selected_earnings_ticker" not in st.session_state:
+        st.session_state.selected_earnings_ticker = ""
+
+    # -----------------------------------------------------------------
+    # 2. DISPLAY FUNCTION – table + buttons
+    # -----------------------------------------------------------------
+    def display_earnings(df, title):
+        st.markdown(f"**{title}**")
+        if df.empty:
+            st.info("No earnings in this period.")
+            return
+
+        # Prepare clean display data
+        disp = df[["symbol", "date", "epsEstimated", "marketCap"]].copy()
+        disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
+
+        # Render header row
+        cols = st.columns([2, 2, 2, 2])
+        headers = ["Ticker", "Date", "EPS Forecast", "Market Cap"]
+        for col, header in zip(cols, headers):
+            col.markdown(f"**{header}**")
+
+        # Render each row
+        for _, row in disp.iterrows():
+            cols = st.columns([2, 2, 2, 2])
+            ticker = row["symbol"]
+
+            with cols[0]:
+                if st.button(
+                    label=ticker,
+                    key=f"earnings_btn_{ticker}_{title}_{row.name}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    st.session_state.selected_earnings_ticker = ticker.upper().strip()
+                    st.rerun()
+
+            with cols[1]:
+                st.write(row["date"])
+            with cols[2]:
+                st.write(row["epsEstimated"] or "—")
+            with cols[3]:
+                st.write(row["marketCap"])
+
+    # -----------------------------------------------------------------
+    # 3. RENDER TABLES
+    # -----------------------------------------------------------------
     today = datetime.today()
     next_7 = today + timedelta(days=10)
     next_30 = today + timedelta(days=45)
 
-    #st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
-
     col1, col2 = st.columns(2)
 
-    def safe_display(df):
-        cols_to_show = [c for c in ["symbol", "date", "epsEstimated", "revenueEstimated"] if c in df.columns]
-        st.dataframe(df[cols_to_show], width='stretch')
-
     with col1:
-        st.markdown("**Next 10 Days**")
-        upcoming_7 = earnings_df[(earnings_df["date"] >= today) &
-                                (earnings_df["date"] <= next_7)]
-        safe_display(upcoming_7)
+        upcoming_7 = filtered_df[
+            (filtered_df["date"] >= today) & (filtered_df["date"] <= next_7)
+        ]
+        display_earnings(upcoming_7, "Next 10 Days")
 
     with col2:
-        st.markdown("**Next 45 Days**")
-        upcoming_30 = earnings_df[(earnings_df["date"] > next_7) &
-                                (earnings_df["date"] <= next_30)]
-        safe_display(upcoming_30)
+        upcoming_30 = filtered_df[
+            (filtered_df["date"] > next_7) & (filtered_df["date"] <= next_30)
+        ]
+        display_earnings(upcoming_30, "Next 45 Days")
+
+    # -----------------------------------------------------------------
+    # 4. PASS TICKER TO MAIN INPUT
+    # -----------------------------------------------------------------
+    default_ticker = st.session_state.selected_earnings_ticker
+
 else:
-    st.warning("⚠️ No earnings data available. Check your API key or wait for cache refresh.")
+    st.warning("No earnings data available for the selected market cap.")
+    default_ticker = ""
+
 
 st.markdown("---")
 
@@ -113,7 +220,12 @@ def calc_sentiment(calls, puts):
     return vol_ratio, oi_ratio, sentiment, color, score
 
 # --- Main Ticker Input & Logic ---
-ticker = st.text_input("Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):", "").upper().strip()
+#ticker = st.text_input("Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):", "").upper().strip()
+ticker = st.text_input(
+    "Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):",
+    value=default_ticker,
+    key="main_ticker_input",  # prevents conflicts
+).upper().strip()
 ETF_TICKERS = {"SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLY", "XLP", "XLV", "XLI", "XLRE", "XLB", "XLU"}
 
 def parse_contract_symbol(symbol):
