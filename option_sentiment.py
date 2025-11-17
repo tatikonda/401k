@@ -5,12 +5,45 @@ import numpy as np
 import requests
 from datetime import datetime, timedelta
 import altair as alt
+import streamlit.components.v1 as components
+
+# --- Scroll Function ---
+def scroll_to(element_id=None):
+    if element_id:
+        # Scroll to specific element
+        components.html(
+            f"""
+            <script>
+                // Wait a bit for the page to render
+                setTimeout(function() {{
+                    var element = window.parent.document.getElementById("{element_id}");
+                    if (element) {{
+                        element.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+                    }} else {{
+                        // Fallback: scroll to top
+                        window.parent.document.documentElement.scrollTo({{top: 0, behavior: 'smooth'}});
+                    }}
+                }}, 100);
+            </script>
+            """,
+            height=0
+        )
+    else:
+        # Scroll to top of page
+        components.html(
+            """
+            <script>
+                window.parent.document.documentElement.scrollTo({top: 0, behavior: 'smooth'});
+            </script>
+            """,
+            height=0
+        )
 
 # --- CONFIG ---
 #FMP_API_KEY = st.secrets["FMP_API_KEY"]  # <-- replace with your FMP API key
 #FMP_EARNINGS_URL = "https://financialmodelingprep.com/stable/earnings-calendar"
 
-st.set_page_config(page_title="Earnings & Options Flow Sentiment Pro",
+st.set_page_config(page_title="Earnings & Options Flow Sentiment",
                    page_icon="📊", layout="wide")
 
 st.title("📈 Earnings & Options Flow Sentiment")
@@ -20,6 +53,7 @@ Analyze **option sentiment, unusual activity**, and **price trends** for any sto
 - ETFs → Based on **option flow**
 ---
 """)
+
 
 # --- Cached Earnings Fetch (using Nasdaq API) ---
 @st.cache_data(ttl=3600*6, show_spinner=False)
@@ -81,7 +115,7 @@ def format_market_cap(value):
     
 col1, col2 = st.columns([4, 1])
 with col1:
-    st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)")
+    st.subheader("📅 Major Upcoming Earnings (Next 10 Days & 45 Days)",anchor="earnings-sentiment-title")
 with col2:
     # --- Market Cap Dropdown ---
     
@@ -108,60 +142,82 @@ with col2:
 
 earnings_df = get_nasdaq_earnings()
 
-# --- Dynamic Major Earnings Panel ---
 # --- Dynamic Major Earnings Panel (Clickable Tickers + Table) ---
 if not earnings_df.empty:
     # --- Market Cap filter ---
     filtered_df = earnings_df[earnings_df["marketCap"] >= min_mc].copy()
-    filtered_df["marketCap"] = filtered_df["marketCap"].apply(format_market_cap)
 
     # -----------------------------------------------------------------
-    # 1. SESSION STATE
+    # 2. MOBILE-RESPONSIVE EARNINGS TABLE
     # -----------------------------------------------------------------
-    if "selected_earnings_ticker" not in st.session_state:
-        st.session_state.selected_earnings_ticker = ""
+    def display_earnings_table(df, title):
+        st.markdown(f"### {title}")
 
-    # -----------------------------------------------------------------
-    # 2. DISPLAY FUNCTION – table + buttons
-    # -----------------------------------------------------------------
-    def display_earnings(df, title):
-        st.markdown(f"**{title}**")
         if df.empty:
             st.info("No earnings in this period.")
             return
 
-        # Prepare clean display data
         disp = df[["symbol", "date", "epsEstimated", "marketCap"]].copy()
         disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
 
-        # Render header row
-        cols = st.columns([2, 2, 2, 2])
-        headers = ["Ticker", "Date", "EPS Forecast", "Market Cap"]
-        for col, header in zip(cols, headers):
-            col.markdown(f"**{header}**")
+        # Market cap formatting
+        def format_mc(x):
+            if pd.isna(x):
+                return "—"
+            x = float(x)
+            if x >= 1e9:
+                return f"${x/1e9:.1f}B"
+            elif x >= 1e6:
+                return f"${x/1e6:.1f}M"
+            return f"${x:,.0f}"
 
-        # Render each row
-        for _, row in disp.iterrows():
-            cols = st.columns([2, 2, 2, 2])
-            ticker = row["symbol"]
+        disp["marketCap"] = disp["marketCap"].apply(format_mc)
+        disp["epsEstimated"] = disp["epsEstimated"].apply(
+            lambda x: f"${x}" if pd.notna(x) else "—"
+        )
 
-            with cols[0]:
-                if st.button(
-                    label=ticker,
-                    key=f"earnings_btn_{ticker}_{title}_{row.name}",
-                    use_container_width=True,
-                    type="secondary",
-                ):
-                    st.session_state.selected_earnings_ticker = ticker.upper().strip()
-                    st.rerun()
+        # Display table using st.dataframe
+        st.dataframe(
+            disp,
+            column_config={
+                "symbol": "Ticker",
+                "date": "Earnings Date", 
+                "epsEstimated": "EPS Estimate",
+                "marketCap": "Market Cap"
+            },
+            hide_index=True,
+            width='stretch',
+            height=400
+        )
 
-            with cols[1]:
-                st.write(row["date"])
-            with cols[2]:
-                st.write(row["epsEstimated"] or "—")
-            with cols[3]:
-                st.write(row["marketCap"])
-
+        # Add analyze buttons in a collapse/expand section
+        with st.expander("🔍 Quick Analyze Tickers", expanded=False):
+            st.markdown("**Click any ticker to analyze:**")
+            
+            # Create buttons in columns
+            tickers = disp["symbol"].tolist()
+            
+            # Determine number of columns based on number of tickers
+            if len(tickers) <= 5:
+                num_cols = len(tickers)
+            else:
+                num_cols = 5
+                
+            cols = st.columns(num_cols)
+            
+            for idx, ticker in enumerate(tickers):
+                with cols[idx % num_cols]:
+                    if st.button(
+                        f"🔍 {ticker}", 
+                        key=f"analyze_{ticker}_{title}_{idx}",
+                        use_container_width=True
+                    ):
+                        st.session_state.selected_earnings_ticker = ticker
+                        st.session_state.scroll_to_search = True
+                        st.rerun()
+            
+            # Add a note about the functionality
+            st.caption("💡 Click any button above to automatically populate the search box and analyze the ticker")
     # -----------------------------------------------------------------
     # 3. RENDER TABLES
     # -----------------------------------------------------------------
@@ -175,25 +231,66 @@ if not earnings_df.empty:
         upcoming_7 = filtered_df[
             (filtered_df["date"] >= today) & (filtered_df["date"] <= next_7)
         ]
-        display_earnings(upcoming_7, "Next 10 Days")
+        display_earnings_table(upcoming_7, "Next 10 Days")
 
     with col2:
         upcoming_30 = filtered_df[
             (filtered_df["date"] > next_7) & (filtered_df["date"] <= next_30)
         ]
-        display_earnings(upcoming_30, "Next 45 Days")
-
-    # -----------------------------------------------------------------
-    # 4. PASS TICKER TO MAIN INPUT
-    # -----------------------------------------------------------------
-    default_ticker = st.session_state.selected_earnings_ticker
+        display_earnings_table(upcoming_30, "Next 45 Days")
 
 else:
     st.warning("No earnings data available for the selected market cap.")
-    default_ticker = ""
-
 
 st.markdown("---")
+if st.session_state.get('scroll_to_top', False):
+    scroll_to("earnings-sentiment-title")
+    st.session_state.scroll_to_top = False
+
+st.header("🔍 Stock Analysis", anchor="search-section")
+
+# Handle scrolling after rerun
+if st.session_state.get('scroll_to_search', False):
+    scroll_to("search-section")
+    st.session_state.scroll_to_search = False
+
+# Get the default ticker value
+default_ticker = st.session_state.get('selected_earnings_ticker', '')
+
+ticker = st.text_input(
+    "Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):",
+    value=default_ticker,
+    key="main_ticker_input",
+).upper().strip()
+
+# Auto-trigger analysis when ticker is set from button click
+if (st.session_state.get('selected_earnings_ticker') and 
+    ticker == st.session_state.selected_earnings_ticker and
+    ticker != st.session_state.get('last_analyzed_ticker', '')):
+    
+    st.session_state.last_analyzed_ticker = ticker
+
+# Add a manual analyze button for clarity
+if ticker:
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.success(f"✅ Ticker **{ticker}** selected. Analysis loaded below.")
+    with col2:
+        if st.button("🔄 Re-analyze", key="reanalyze_button", width='stretch'):
+            st.session_state.scroll_to_top = True
+            st.rerun()
+
+# Handle scrolling after rerun
+if st.session_state.get('scroll_to_search', False):
+    scroll_to("search-section")
+    st.session_state.scroll_to_search = False
+
+# Handle scrolling to top after re-analyze
+if st.session_state.get('scroll_to_top', False):
+    scroll_to("earnings-sentiment-title")
+    st.session_state.scroll_to_top = False
+
+ETF_TICKERS = {"SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLY", "XLP", "XLV", "XLI", "XLRE", "XLB", "XLU"}
 
 # --- Function to calculate sentiment ---
 def calc_sentiment(calls, puts):
@@ -218,15 +315,6 @@ def calc_sentiment(calls, puts):
         color = "gray"
 
     return vol_ratio, oi_ratio, sentiment, color, score
-
-# --- Main Ticker Input & Logic ---
-#ticker = st.text_input("Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):", "").upper().strip()
-ticker = st.text_input(
-    "Enter Stock or ETF Ticker (e.g. AAPL, NVDA, SPY, QQQ):",
-    value=default_ticker,
-    key="main_ticker_input",  # prevents conflicts
-).upper().strip()
-ETF_TICKERS = {"SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLY", "XLP", "XLV", "XLI", "XLRE", "XLB", "XLU"}
 
 def parse_contract_symbol(symbol):
     try:
